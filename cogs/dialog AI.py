@@ -17,9 +17,6 @@ class AIHelper(Cog):
         print(f"{self.bot.user} | {__name__}")
 
 
-    async def anime(self):
-        webhoooks = await forum.webhooks()
-
     @commands.Cog.listener("on_message")
     async def on_message_in_forum(self, message: disnake.Message):
         """FROM DM -> FORUM"""

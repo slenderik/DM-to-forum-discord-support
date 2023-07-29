@@ -1,8 +1,6 @@
-import asyncio
-import datetime
-
+import calendar, datetime
 from disnake import ApplicationCommandInteraction, Message, DMChannel, Thread, NotFound, HTTPException, Thread, User, \
-    Member, ForumChannel
+    Member, ForumChannel, Embed, MessageType
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
 
@@ -28,62 +26,118 @@ class DialogStart(Cog):
 
         return thread
 
+
+    #TODO add reactions!
+    #TODO pin messages!!
+    #TODO close for reaction and tag
+
+    @commands.Cog.listener("on_message")
+    async def delete_pin_message(self, message: Message):
+
+        print(message.channel.id == modmail_forum_id)
+        if not message.channel.id == modmail_forum_id:
+            return
+
+        print(message.type)
+        if message.type == MessageType.pins_add:
+            await message.delete()
+
     @commands.Cog.listener("on_message")
     async def from_dm_to_forum(self, dm_message: Message):
         """DM -> FORUM"""
+
+        user = dm_message.author
 
         # only direct message
         if not isinstance(dm_message.channel, DMChannel):
             return
 
-        # denied cyclings
-        if dm_message.author.id == self.bot.user.id:
-            return
-
-        modmail_forum: Thread
-        modmail_forum = self.bot.get_channel(modmail_forum_id)
-        user = dm_message.author
-
-        if modmail_forum is None:
+        # only users
+        if user.bot:
             return
 
         thread = await self.get_modmail_thread(user)
+        modmail_forum: Thread
+        modmail_forum = self.bot.get_channel(modmail_forum_id)
+
+        if modmail_forum is None:
+            raise LookupError
 
         if thread is None:
-            thread, thread_message = await modmail_forum.create_thread(
-                name=f"{user.name} ({user.id})",
-                content=">>>" + dm_message.content
+            # creating new thread
+            # TODO Когда cоздан, сколько обращений и сколько сообщений
+
+            messages = 0
+            async for message in dm_message.channel.history(limit=None):
+                if not message.author.bot:
+                    messages += 1
+
+            threads = 0
+            async for thread in modmail_forum.archived_threads():
+                if str(user.id) in thread.name:
+                    threads += 1
+
+            timestamp = calendar.timegm(datetime.datetime.utcnow().utctimetuple())
+
+            embed = Embed(description=f""
+                  f"**Создан**: <t:{timestamp}:R> \n"
+                  f"**Написал сообщений**: {messages} \n"
+                  f"**Обращений:** {threads}"
             )
+            embed.set_author(name=f"<@{user.id}> ({user.id})", icon_url=user.display_avatar.url)
+
+            thread, thread_message = await modmail_forum.create_thread(name=f"{user.name} ({user.id})", embed=embed)
+            await thread_message.pin()
 
         files = []
         for attachment in dm_message.attachments:
             files += await attachment.to_file(description=f"From {user.name} ({user.id})")
 
+
+        webhooks = await modmail_forum.webhooks()
+
+        if not webhooks:
+            webhook = await modmail_forum.create_webhook(name="Support hook", reason="Modmail")
+        else:
+            webhook = webhooks[0]
+
+
         try:
-            thread_message = await thread.send(
+            #TODO stickers=dm_message.stickers,
+            await webhook.send(
                 content=dm_message.content,
+                username=user.name,
+                avatar_url=user.display_avatar.url,
                 embeds=dm_message.embeds,
                 files=files,
-                stickers=dm_message.stickers,
-                components=dm_message.components
+                components=dm_message.components,
+                thread=thread
             )
         except Exception as e:
             await dm_message.add_reaction("⚠️")
+            # TODO нормальная обработка ошибок // текст
+            await dm_message.channel.send("⚠️ Похоже произошла ошибка. Пожалуйста, попробуйте обратится позже.")
             await thread.send(f"ERROR: `{e}`")
-
+            print(f"ERROR: {e}")
         else:
             await dm_message.add_reaction("✔️")
 
-            # clear previos messages
-            for messsage in dm_message.channel.history():
-                await messsage.clear_reactions()
-        """DM -> FORUM"""
+
+            skip_once = True
+            # clear previous messages
+            async for message in dm_message.channel.history(limit=20):
+                if skip_once is True:
+                    skip_once = False
+                    continue
+
+                await message.remove_reaction("✔️", self.bot.user)
 
     async def from_forum_to_dm(self, message: Message):
-        """DM -> FORUM"""
+        """FORUM -> DM"""
         if message.author.id == self.bot.user.id:
             return
 
+        #TODO typing
         if isinstance(message.channel, Thread):
             thread = message.channel
             user_id = thread.name[-19:-1]
@@ -93,6 +147,7 @@ class DialogStart(Cog):
 
             try:
                 user = await self.bot.get_or_fetch_user(user_id)
+
             except HTTPException:
                 print()
             try:
