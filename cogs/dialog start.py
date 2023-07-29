@@ -29,7 +29,7 @@ class DialogStart(Cog):
         return thread
 
     @commands.Cog.listener("on_message")
-    async def dm_forum(self, dm_message: Message):
+    async def from_dm_to_forum(self, dm_message: Message):
         """DM -> FORUM"""
 
         # only direct message
@@ -77,9 +77,10 @@ class DialogStart(Cog):
             # clear previos messages
             for messsage in dm_message.channel.history():
                 await messsage.clear_reactions()
+        """DM -> FORUM"""
 
-    @commands.Cog.listener("on_message")
-    async def forum_to_dm(self, message: Message):
+    async def from_forum_to_dm(self, message: Message):
+        """DM -> FORUM"""
         if message.author.id == self.bot.user.id:
             return
 

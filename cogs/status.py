@@ -1,5 +1,4 @@
-import disnake
-from disnake import Game
+from disnake import Activity, ActivityType
 from disnake.ext import tasks, commands
 
 
@@ -10,9 +9,7 @@ class Status(commands.Cog):
 
     @tasks.loop(minutes=10.0)
     async def status_loop(self):
-        statuses = [""]
-        emoji = disnake.PartialEmoji(name="sparkles", animated=False)
-        activity = disnake.Activity(name="вас, пишите в лс", type=disnake.ActivityType.listening)
+        activity = Activity(name="вас, пишите в лс", type=ActivityType.listening)
         await self.bot.change_presence(activity=activity)
 
     @status_loop.before_loop
