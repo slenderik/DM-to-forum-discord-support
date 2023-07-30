@@ -1,6 +1,8 @@
-import calendar, datetime
-from disnake import ApplicationCommandInteraction, Message, DMChannel, Thread, NotFound, HTTPException, Thread, User, \
-    Member, ForumChannel, Embed, MessageType
+import calendar
+import datetime
+
+from disnake import Message, DMChannel, HTTPException, Thread, User, \
+    Member, Embed
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
 
@@ -26,21 +28,26 @@ class DialogStart(Cog):
 
         return thread
 
-
-    #TODO add reactions!
-    #TODO pin messages!!
-    #TODO close for reaction and tag
+    # TODO execute command in DM
+    # TODO typing event  \\ ai is alright
+    # TODO add reactions!
+    # TODO pin messages!!
+    # TODO close for reaction and tag
 
     @commands.Cog.listener("on_message")
     async def delete_pin_message(self, message: Message):
 
-        print(message.channel.id == modmail_forum_id)
-        if not message.channel.id == modmail_forum_id:
+        if not isinstance(message.channel, Thread):
             return
 
-        print(message.type)
-        if message.type == MessageType.pins_add:
-            await message.delete()
+        if not message.channel.parent_id == modmail_forum_id:
+            return
+
+        if "pinned" in message.system_content:
+            try:
+                await message.delete()
+            except Exception as e:
+                print(e)
 
     @commands.Cog.listener("on_message")
     async def from_dm_to_forum(self, dm_message: Message):
@@ -56,16 +63,17 @@ class DialogStart(Cog):
         if user.bot:
             return
 
+        # get or create a thread
         thread = await self.get_modmail_thread(user)
-        modmail_forum: Thread
         modmail_forum = self.bot.get_channel(modmail_forum_id)
 
         if modmail_forum is None:
             raise LookupError
 
+        # creating new thread
         if thread is None:
-            # creating new thread
-            # TODO Когда cоздан, сколько обращений и сколько сообщений
+            member = modmail_forum.guild.get_member(user.id)
+            member = member.joined_at if member is not None else "нет"
 
             messages = 0
             async for message in dm_message.channel.history(limit=None):
@@ -79,12 +87,13 @@ class DialogStart(Cog):
 
             timestamp = calendar.timegm(datetime.datetime.utcnow().utctimetuple())
 
-            embed = Embed(description=f""
-                  f"**Создан**: <t:{timestamp}:R> \n"
-                  f"**Написал сообщений**: {messages} \n"
-                  f"**Обращений:** {threads}"
-            )
+            text = f"**Создан:** <t:{timestamp}:R> \n \n" \
+                   f"**Зашёл:** {member} \n" \
+                   f"**Cообщений:** {messages} \n" \
+                   f"**Обращений:** {threads}"
+            embed = Embed(title="📫 Новое обращение", description=text)
             embed.set_author(name=f"<@{user.id}> ({user.id})", icon_url=user.display_avatar.url)
+            # TODO доделать это..
 
             thread, thread_message = await modmail_forum.create_thread(name=f"{user.name} ({user.id})", embed=embed)
             await thread_message.pin()
@@ -93,7 +102,6 @@ class DialogStart(Cog):
         for attachment in dm_message.attachments:
             files += await attachment.to_file(description=f"From {user.name} ({user.id})")
 
-
         webhooks = await modmail_forum.webhooks()
 
         if not webhooks:
@@ -101,9 +109,8 @@ class DialogStart(Cog):
         else:
             webhook = webhooks[0]
 
-
         try:
-            #TODO stickers=dm_message.stickers,
+            # TODO stickers=dm_message.stickers,
             await webhook.send(
                 content=dm_message.content,
                 username=user.name,
@@ -122,7 +129,6 @@ class DialogStart(Cog):
         else:
             await dm_message.add_reaction("✔️")
 
-
             skip_once = True
             # clear previous messages
             async for message in dm_message.channel.history(limit=20):
@@ -132,44 +138,43 @@ class DialogStart(Cog):
 
                 await message.remove_reaction("✔️", self.bot.user)
 
+    @commands.Cog.listener("on_message")
     async def from_forum_to_dm(self, message: Message):
         """FORUM -> DM"""
+
+        if not message.webhook_id is None:
+            return
+
         if message.author.id == self.bot.user.id:
             return
 
-        #TODO typing
-        if isinstance(message.channel, Thread):
-            thread = message.channel
-            user_id = thread.name[-19:-1]
+        if not isinstance(message.channel, Thread):
+            return
 
-            if not message.channel.parent_id == modmail_forum_id:
-                return
+        if not message.channel.parent_id == modmail_forum_id:
+            return
 
-            try:
-                user = await self.bot.get_or_fetch_user(user_id)
+        thread = message.channel
+        user_id = thread.name[-19:-1]
 
-            except HTTPException:
-                print()
-            try:
+        try:
+            user = await self.bot.get_or_fetch_user(user_id)
+        except HTTPException:
+            print()
 
-                files = []
-                for attachment in message.attachments:
-                    files += await attachment.to_file(description=f"From {user.name} ({user.id})")
+        # send a message
+        try:
+            files = []
+            for attachment in message.attachments:
+                files += await attachment.to_file(description=f"From {user.name} ({user.id})")
 
-                await user.send(
-                    files=files,
-                    embeds=message.embeds,
-                    content=message.content,
-                    stickers=message.stickers,
-                    components=message.components
-                )
-
-            except Exception as e:
-                await message.add_reaction("⚠️")
-                await thread.send(f"```{e}``` User id -> {user_id}")
-
-            else:
-                await message.add_reaction("✔️")
+            await user.send(files=files, embeds=message.embeds, content=message.content, stickers=message.stickers,
+                            components=message.components)
+        except Exception as e:
+            await message.add_reaction("⚠️")
+            await thread.send(f"```{e}``` User id -> {user_id}")
+        else:
+            await message.add_reaction("✔️")
 
 
 def setup(bot: Bot) -> None:
