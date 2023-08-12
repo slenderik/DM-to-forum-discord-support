@@ -1,11 +1,30 @@
 import dialogflow
+from dialogflow_v2.proto.session_pb2 import QueryResult
 from disnake import Embed
 from google.api_core.exceptions import InvalidArgument
 from os import environ
-
+# TODO migrate to google.cloud
 import disnake
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
+
+
+async def AI_answer(text: str, session_id: int, context: str = None) -> QueryResult:
+    project_id = environ.get("DIALOGFLOW_PROJECT_ID")
+    language = 'ru-RU'
+
+    session_client = dialogflow.SessionsClient()
+    session = session_client.session_path(project_id, session_id)
+
+    text_input = dialogflow.types.TextInput(text=text, language_code=language)
+    query_input = dialogflow.types.QueryInput(text=text_input)
+
+    try:
+        response = session_client.detect_intent(session=session, query_input=query_input)
+        return response.query_result
+
+    except InvalidArgument:
+        raise
 
 
 class AIHelper(Cog):
@@ -33,36 +52,18 @@ class AIHelper(Cog):
 
         await channel.trigger_typing()
 
-        DIALOGFLOW_PROJECT_ID = 'breadix-support-xyev'
-        DIALOGFLOW_LANGUAGE_CODE = 'ru-RU'
-        SESSION_ID = message.author.id
+        response = await AI_answer(message.content, message.author.id)
 
-        text_to_be_analyzed = message.content
-
-        session_client = dialogflow.SessionsClient()
-        session = session_client.session_path(DIALOGFLOW_PROJECT_ID, SESSION_ID)
-
-        text_input = dialogflow.types.TextInput(text=text_to_be_analyzed, language_code=DIALOGFLOW_LANGUAGE_CODE)
-        query_input = dialogflow.types.QueryInput(text=text_input)
-
-        try:
-            response = session_client.detect_intent(session=session, query_input=query_input)
-        except InvalidArgument:
-            raise
-
-        if response.query_result.fulfillment_text == "":
+        if response.fulfillment_text == "":
             await message.reply("Очень странно, но нет ответа.")
             return
 
-        name = response.query_result.intent.display_name
-        confidence = round(response.query_result.intent_detection_confidence, 1) * 100
+        name = response.intent.display_name
+        confidence = round(response.intent_detection_confidence, 1) * 100
 
-
-        # TODO tag for intent
-
-        embed = Embed(description=response.query_result.fulfillment_text)
+        embed = Embed(description=response.fulfillment_text)
         embed.set_author(name="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
-        await message.reply(content=f"Я уверен что это {name} на {confidence}%", embed=embed)
+        await message.reply(content=f"Уверен это {name} на {confidence}%", embed=embed)
 
 
 def setup(bot: Bot) -> None:
