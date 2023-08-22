@@ -1,9 +1,8 @@
-import calendar
 from time import time, mktime
+from cogs.AI import AI_answer
 
 from disnake import Message, DMChannel, HTTPException, Thread, User, \
     Member, Embed, ForumTag, ForumChannel
-from disnake.abc import GuildChannel
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
 
@@ -93,30 +92,83 @@ class DialogStart(Cog):
                 print(e)
 
     @commands.Cog.listener("on_message")
-    async def from_dm_to_forum(self, dm_message: Message):
-        """DM -> FORUM"""
+    async def support_dm2thread(self, dm_message: Message):
+
         start_time = time()
-        print(f"--- check start {time() - start_time} ---")
         user: User = dm_message.author
+        dm: DMChannel = dm_message.channel
 
         # only direct message
-        if not isinstance(dm_message.channel, DMChannel):
+        if not isinstance(dm, DMChannel):
             return
 
         # only users
         if user.bot:
             return
 
-        print(f"--- check end {time() - start_time} ---")
+        print(f"- check {time() - start_time}")
 
         # get or create a thread
         thread: Thread = await self.get_modmail_thread(user)
         forum: ForumChannel = self.bot.get_channel(modmail_forum_id)
 
-        # creating new thread
+        # create new empty thread
+        thread_message = None
         if thread is None:
+            thread, thread_message = await forum.create_thread(name=f"{user.name} ({user.id})", content="Загрузка")
+            print(f"- create thread {time() - start_time}")
 
-            print(f"--- 1 create thread {time() - start_time} ---")
+        # send a message
+        files = []
+        for attachment in dm_message.attachments:
+            files += await attachment.to_file(description=f"От {user.name} ({user.id}) в поддержку")
+
+        try:
+            await thread.send(
+                stickers=dm_message.stickers,
+                content=dm_message.content,
+                embeds=dm_message.embeds,
+                files=files,
+                components=dm_message.components
+            )
+            print(f"- message send {time() - start_time}")
+        except Exception as e:
+            # TODO нормальная обработка ошибок // текст
+            await dm_message.add_reaction("⚠️")
+            await dm_message.channel.send("⚠️ Похоже произошла ошибка. Пожалуйста, попробуйте обратится позже.")
+            await thread.send(f"ERROR: `{e}`")
+            print(f"ERROR: {e}")
+        else:
+            # # clear previous reaction
+            # skip_once = True
+            # print(f"- delete marks {time() - start_time}")
+            # async for message in dm_message.channel.history(limit=2):
+            #     if message.author.bot:
+            #         continue
+            #
+            #     if skip_once is True:
+            #         skip_once = False
+            #         continue
+            #
+            #     await message.remove_reaction("✔️", self.bot.user)
+
+            # filling an empty branch with data
+            await dm_message.add_reaction("✔️")
+            print(f"- delete marks {time() - start_time}")
+
+        # TODO add conversation tag
+        # name = response.query_result.intent.display_name
+        # add or create new tag about thread theme
+        # tags = forum.available_tags
+        # tags.append(ForumTag(name=""))
+        # await forum.edit(available_tags=tags)
+
+        # filling an empty thread with data
+        if thread_message is not None:
+
+            print(f"- 1 create thread {time() - start_time}")
+            await thread_message.pin()
+
             # get number of messages form author
             messages = 0
             async for message in dm_message.channel.history(limit=None):
@@ -133,7 +185,7 @@ class DialogStart(Cog):
             member = "нет" if member is None else round(mktime(member.joined_at.timetuple()))
             timestamp = round(time())
 
-            print(f"--- 2 create thread {time() - start_time} ---")
+            print(f"- 2 create thread {time() - start_time}")
 
             text = f"**Создан:** <t:{timestamp}:R> \n \n" \
                    f"**Зашёл:** {member} \n" \
@@ -143,89 +195,54 @@ class DialogStart(Cog):
             embed = Embed(title="📫 Новое обращение", description=text)
             embed.set_thumbnail(url=user.display_avatar.url)
 
+            await thread_message.edit(conntent=None, embed=embed)
+
             # add unresolved tag
             tags = forum.available_tags
             unresolved_tag = forum.get_tag(id_unresolved_tag)
             tags.append(unresolved_tag)
 
-            thread, thread_message = await forum.create_thread(
-                name=f"{user.name} ({user.id})",
-                embed=embed, applied_tags=tags
-            )
-            await thread_message.pin()
+            await thread.edit(applied_tags=tags)
 
-            print(f"--- 3 create thread {time() - start_time} ---")
+            print(f"- 3 create thread {time() - start_time}")
 
-        # TODO add conversation tag
-        # name = response.query_result.intent.display_name
-        # add or create new tag about thread theme
-        # tags = forum.available_tags
-        # tags.append(ForumTag(name=""))
-        # await forum.edit(available_tags=tags)
+        print(f"- AI start {time() - start_time}")
 
-        # send a message
-        files = []
-        for attachment in dm_message.attachments:
-            files += await attachment.to_file(description=f"From {user.name} ({user.id})")
+        # AI try to answer
+        if dm_message.content == "":
+            return
 
-        # webhooks = await forum.webhooks()
-        #
-        # if not webhooks:
-        #     webhook = await forum.create_webhook(name="Support hook", reason="Modmail")
-        # else:
-        #     webhook = webhooks[0]
+        await dm.trigger_typing()
 
-        try:
-            await thread.send(
-                stickers=dm_message.stickers,
-                content=dm_message.content,
-                embeds=dm_message.embeds,
-                files=files,
-                components=dm_message.components
-            )
+        response = await AI_answer(dm_message.content, user.id)
 
-            print(f"--- send on {time() - start_time} ---")
+        if response.fulfillment_text == "":
+            await dm_message.reply("Очень странно, нет ответа.")
+            return
 
-        except Exception as e:
-            await dm_message.add_reaction("⚠️")
-            # TODO нормальная обработка ошибок // текст
-            await dm_message.channel.send("⚠️ Похоже произошла ошибка. Пожалуйста, попробуйте обратится позже.")
-            await thread.send(f"ERROR: `{e}`")
-            print(f"ERROR: {e}")
-        else:
-            await dm_message.add_reaction("✔️")
+        name = response.intent.display_name
+        confidence = round(response.intent_detection_confidence, 1) * 100
 
-            print(f"--- start delete marks {time() - start_time} ---")
+        embed = Embed(description=response.fulfillment_text)
+        embed.set_footer(text="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
+        await dm_message.reply(embed=embed)
+        await thread.send(content=f"`{name} - {confidence}%`", embed=embed)
 
-            skip_once = True
-            # clear previous messages
-            async for message in dm_message.channel.history(limit=2):
-                if skip_once is True:
-                    skip_once = False
-                    continue
-
-                await message.remove_reaction("✔️", self.bot.user)
-            print(f"--- end delete marks {time() - start_time} ---")
-
-        print(f"--- end {time() - start_time} ---")
+        print(f"- AI answered {time() - start_time}")
 
     @commands.Cog.listener("on_message")
-    async def from_forum_to_dm(self, message: Message):
-        """FORUM -> DM"""
-
-        if not message.webhook_id is None:
-            return
-
+    async def support_thread2dm(self, message: Message):
+        start_time = time()
         if message.author.id == self.bot.user.id:
             return
-
         if not isinstance(message.channel, Thread):
             return
-
         if not message.channel.parent_id == modmail_forum_id:
             return
 
-        thread = message.channel
+        print(f"- check {time() - start_time}")
+
+        thread: Thread = message.channel
         user_id = thread.name[-19:-1]
 
         try:
@@ -241,11 +258,14 @@ class DialogStart(Cog):
 
             await user.send(files=files, embeds=message.embeds, content=message.content, stickers=message.stickers,
                             components=message.components)
+
+            print(f"- message send {time() - start_time}")
         except Exception as e:
             await message.add_reaction("⚠️")
             await thread.send(f"```{e}``` User id -> {user_id}")
         else:
             await message.add_reaction("✔️")
+            print(f"- reaction {time() - start_time}")
 
 
 def setup(bot: Bot) -> None:
