@@ -1,14 +1,14 @@
 from time import time, mktime
-from cogs.AI import AI_answer
+from cogs.AI import ai_answer
 
 from disnake import Message, DMChannel, HTTPException, Thread, User, \
-    Member, Embed, ForumTag, ForumChannel
+    Member, Embed, ForumChannel
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
 
 modmail_forum_id: int = 1118969274527133808
-id_unresolved_tag: int = 1137631873288376471
-id_resolved_tag: int = 1134868441992527892
+unresolved_tag_id: int = 1137631873288376471
+resolved_tag_id: int = 1134868441992527892
 
 
 class DialogStart(Cog):
@@ -30,11 +30,24 @@ class DialogStart(Cog):
 
         return thread
 
+    async def call_agent(self, thread: Thread, dm_message: Message):
+        embed = Embed(description="**Ждём ответа.** Ответим в течении 24-х часов.")
+        embed.set_footer(text="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
+        await dm_message.reply(embed=embed)
+        await thread.send("<@&1150512891804536913>, здесь нужна помощь. Бот не вывез!")
+
+    # TODO try except else
     # TODO execute command in DM
     # TODO typing event  \\ ai is alright
     # TODO add reactions!
     # TODO pin messages!!
     # TODO close for reaction and tag
+    # TODO add conversation tag
+    # name = response.query_result.intent.display_name
+    # add or create new tag about thread theme
+    # tags = forum.available_tags
+    # tags.append(ForumTag(name=""))
+    # await forum.edit(available_tags=tags)
 
     @commands.Cog.listener("on_thread_update")
     async def close_forum_with_tag(self, before: Thread, after: Thread):
@@ -47,7 +60,7 @@ class DialogStart(Cog):
             return
 
         forum: ForumChannel = before.parent
-        tag = forum.get_tag(id_resolved_tag)
+        tag = forum.get_tag(resolved_tag_id)
 
         print(tag not in before.applied_tags and tag in after.applied_tags)
         # TODO не работает
@@ -65,12 +78,12 @@ class DialogStart(Cog):
             return
 
         forum: ForumChannel = before.parent
-        tag = forum.get_tag(id_resolved_tag)
+        tag = forum.get_tag(resolved_tag_id)
 
         if tag not in before.applied_tags and tag in after.applied_tags:
             try:
                 tags = forum.available_tags
-                unresolved_tag = forum.get_tag(id_unresolved_tag)
+                unresolved_tag = forum.get_tag(unresolved_tag_id)
                 tags.remove(unresolved_tag)
                 await after.edit(applied_tags=tags)
             except:
@@ -98,6 +111,8 @@ class DialogStart(Cog):
         user: User = dm_message.author
         dm: DMChannel = dm_message.channel
 
+        print(f"- check {time() - start_time}")
+
         # only direct message
         if not isinstance(dm, DMChannel):
             return
@@ -106,129 +121,107 @@ class DialogStart(Cog):
         if user.bot:
             return
 
-        print(f"- check {time() - start_time}")
-
-        # get or create a thread
+        # get a thread
         thread: Thread = await self.get_modmail_thread(user)
         forum: ForumChannel = self.bot.get_channel(modmail_forum_id)
 
-        # create new empty thread
-        thread_message = None
+        # create new one
         if thread is None:
-            thread, thread_message = await forum.create_thread(name=f"{user.name} ({user.id})", content="Загрузка")
-            print(f"- create thread {time() - start_time}")
-
-        # send a message
-        files = []
-        for attachment in dm_message.attachments:
-            files += await attachment.to_file(description=f"От {user.name} ({user.id}) в поддержку")
-
-        try:
-            await thread.send(
-                stickers=dm_message.stickers,
-                content=dm_message.content,
-                embeds=dm_message.embeds,
-                files=files,
-                components=dm_message.components
-            )
-            print(f"- message send {time() - start_time}")
-        except Exception as e:
-            # TODO нормальная обработка ошибок // текст
-            await dm_message.add_reaction("⚠️")
-            await dm_message.channel.send("⚠️ Похоже произошла ошибка. Пожалуйста, попробуйте обратится позже.")
-            await thread.send(f"ERROR: `{e}`")
-            print(f"ERROR: {e}")
-        else:
-            # # clear previous reaction
-            # skip_once = True
-            # print(f"- delete marks {time() - start_time}")
-            # async for message in dm_message.channel.history(limit=2):
-            #     if message.author.bot:
-            #         continue
-            #
-            #     if skip_once is True:
-            #         skip_once = False
-            #         continue
-            #
-            #     await message.remove_reaction("✔️", self.bot.user)
-
-            # filling an empty branch with data
-            await dm_message.add_reaction("✔️")
-            print(f"- delete marks {time() - start_time}")
-
-        # TODO add conversation tag
-        # name = response.query_result.intent.display_name
-        # add or create new tag about thread theme
-        # tags = forum.available_tags
-        # tags.append(ForumTag(name=""))
-        # await forum.edit(available_tags=tags)
-
-        # filling an empty thread with data
-        if thread_message is not None:
-
             print(f"- 1 create thread {time() - start_time}")
-            await thread_message.pin()
 
-            # get number of messages form author
-            messages = 0
-            async for message in dm_message.channel.history(limit=None):
-                if not message.author.bot:
-                    messages += 1
-
-            # get number of threads from author
-            threads = 0
-            async for thread in forum.archived_threads():
-                if str(user.id) in thread.name:
-                    threads += 1
-
+            # create embed
             member = forum.guild.get_member(user.id)
-            member = "нет" if member is None else round(mktime(member.joined_at.timetuple()))
-            timestamp = round(time())
+            join_time = "нет" if member is None else round(mktime(member.joined_at.timetuple()))
 
-            print(f"- 2 create thread {time() - start_time}")
-
-            text = f"**Создан:** <t:{timestamp}:R> \n \n" \
-                   f"**Зашёл:** {member} \n" \
-                   f"**Cообщений:** {messages} \n" \
-                   f"**Обращений:** {threads}"
-
-            embed = Embed(title="📫 Новое обращение", description=text)
+            embed = Embed(
+                title="📫 Обращение",
+                description=f"Создан: <t:{join_time}:R> \n Зашёл: {member}"
+            )
             embed.set_thumbnail(url=user.display_avatar.url)
-
-            await thread_message.edit(conntent=None, embed=embed)
 
             # add unresolved tag
             tags = forum.available_tags
-            unresolved_tag = forum.get_tag(id_unresolved_tag)
-            tags.append(unresolved_tag)
+            tags.append(forum.get_tag(unresolved_tag_id))
 
-            await thread.edit(applied_tags=tags)
+            thread, thread_message = await forum.create_thread(
+                name=f"{user.name} ({user.id})",
+                applied_tags=tags
+            )
+            await thread_message.pin()
 
-            print(f"- 3 create thread {time() - start_time}")
+        print(f"- message send {time() - start_time}")
+        print("STICKERS: ", bool(dm_message.stickers), " - ", dm_message.stickers)
+        print("ATTACHMENTS: ", bool(dm_message.attachments), " - ", dm_message.attachments)
 
-        print(f"- AI start {time() - start_time}")
+        # photo or video
+        if dm_message.attachments and dm_message.content == "":
+            files = []
+            for attachment in dm_message.attachments:
+                files += await attachment.to_file(description=f"От {user.display_name} ({user.id}) в поддержку.")
 
-        # AI try to answer
-        if dm_message.content == "":
+            embed = Embed(description="Чтобы быстрее ответить – опишите то, что находится на изображении.")
+            embed.set_footer(text="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
+            await dm_message.reply(embed=embed)
+            await thread.send(files=files)
             return
 
-        await dm.trigger_typing()
+        # sticker only
+        elif dm_message.stickers:
+            text = f"От {user.display_name} ({user.id}) в поддержку."
+            stickers = []
+            for sticker in dm_message.stickers:
+                stickers += self.bot.get_sticker(sticker.id)
+                # stickers += await sticker.to_file(description=text)
 
-        response = await AI_answer(dm_message.content, user.id)
-
-        if response.fulfillment_text == "":
-            await dm_message.reply("Очень странно, нет ответа.")
+            await self.call_agent(thread, dm_message)
+            await thread.send(stickers=stickers)
             return
 
-        name = response.intent.display_name
-        confidence = round(response.intent_detection_confidence, 1) * 100
+        #TODO system_content
 
-        embed = Embed(description=response.fulfillment_text)
-        embed.set_footer(text="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
-        await dm_message.reply(embed=embed)
-        await thread.send(content=f"`{name} - {confidence}%`", embed=embed)
+        elif dm_message.content != "":
 
-        print(f"- AI answered {time() - start_time}")
+            # send message to thread
+            text = f"От {user.display_name} ({user.id}) в поддержку."
+            files = [await file.to_file(description=text) for file in dm_message.attachments]
+            await thread.send(content=dm_message.content, files=files)
+
+            # add reaction as answer about success
+            # clear previous reaction
+            async for message in dm_message.channel.history(after=dm_message.created_at, limit=2):
+                if message.author.bot:
+                    continue
+
+                await message.remove_reaction("✔️", self.bot.user)
+            # and add new one
+            await dm_message.add_reaction("✔️")
+
+            print(f"- AI start {time() - start_time}")
+
+            # AI try to answer
+            await dm.trigger_typing()
+            await thread.trigger_typing()
+
+            response = await ai_answer(dm_message.content, user.id)
+            confidence = response.intent_detection_confidence
+            name = response.intent.display_name
+            answer = response.fulfillment_text
+
+            # AI can't answer - call agent
+            if answer == "Агент" or answer == "" or confidence <= 0.5:
+                await self.call_agent(thread, dm_message)
+
+            else:
+                embed = Embed(description=answer)
+                embed.set_footer(text="Ассистент Хлеб Хлебович", icon_url=self.bot.user.display_avatar.url)
+                await dm_message.reply(embed=embed)
+                await thread.send(content=f"`{name} - {confidence}`", embed=embed)
+
+            print(f"- AI answered {time() - start_time}")
+            print(f"_______________ \n")
+
+        else:
+            print("THIS IS FUCK!")
 
     @commands.Cog.listener("on_message")
     async def support_thread2dm(self, message: Message):

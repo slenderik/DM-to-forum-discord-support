@@ -1,15 +1,17 @@
 import dialogflow
+
 from dialogflow_v2.proto.session_pb2 import QueryResult
 from disnake import Embed
 from google.api_core.exceptions import InvalidArgument
 from os import environ
+
 # TODO migrate to google.cloud
 import disnake
 from disnake.ext import commands
 from disnake.ext.commands import Bot, Cog
 
 
-async def AI_answer(text: str, session_id: int, context: str = None) -> QueryResult:
+async def ai_answer(text: str, session_id: int, context: str = None) -> QueryResult:
     project_id = environ.get("DIALOGFLOW_PROJECT_ID")
     language = 'ru-RU'
 
@@ -52,7 +54,7 @@ class AIHelper(Cog):
 
         await channel.trigger_typing()
 
-        response = await AI_answer(message.content, message.author.id)
+        response = await ai_answer(message.content, message.author.id)
 
         if response.fulfillment_text == "":
             await message.reply("Очень странно, но нет ответа.")
