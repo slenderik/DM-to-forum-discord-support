@@ -17,7 +17,6 @@ from lottie.importers import importers as l_importers
 from lottie.exporters import exporters as l_exporters
 
 from core.models import DMDisabled, DummyMessage, getLogger
-from core.time import human_timedelta
 from core.utils import (
     is_image_url,
     parse_channel_topic,
@@ -37,7 +36,7 @@ class Chat:
 
     def __init__(
         self,
-        manager: "ThreadManager",
+        manager: "ChatManager",
         recipient: typing.Union[disnake.Member, disnake.User, int],
         channel: typing.Union[disnake.DMChannel, disnake.TextChannel] = None,
         other_recipients: typing.List[typing.Union[disnake.Member, disnake.User]] = None,
@@ -62,10 +61,10 @@ class Chat:
         self._cancelled = False
 
     def __repr__(self):
-        return f'Thread(recipient="{self.recipient or self.id}", channel={self.channel.id}, other_recipients={len(self._other_recipients)})'
+        return f'Chat(recipient="{self.recipient or self.id}", channel={self.channel.id}, other_recipients={len(self._other_recipients)})'
 
     def __eq__(self, other):
-        if isinstance(other, Thread):
+        if isinstance(other, Chat):
             return self.id == other.id
         return super().__eq__(other)
 
@@ -121,7 +120,7 @@ class Chat:
                 i.cancel()
 
     @classmethod
-    async def from_channel(cls, manager: "ThreadManager", channel: disnake.TextChannel) -> "Thread":
+    async def from_channel(cls, manager: "ChatManager", channel: disnake.TextChannel) -> "Chat":
         # there is a chance it grabs from another recipient's main thread
         _, recipient_id, other_ids = parse_channel_topic(channel.topic)
 
@@ -410,7 +409,7 @@ class Chat:
         try:
             self.manager.cache.pop(self.id)
         except KeyError as e:
-            logger.error("Thread already closed: %s.", e)
+            logger.error("Chat already closed: %s.", e)
             return
 
         await self.cancel_closure(all=True)
@@ -483,7 +482,7 @@ class Chat:
 
         embed.title = user
 
-        event = "Thread Closed as Scheduled" if scheduled else "Thread Closed"
+        event = "Chat Closed as Scheduled" if scheduled else "Chat Closed"
         # embed.set_author(name=f"Event: {event}", url=log_url)
         embed.set_footer(text=f"{event} by {_closer}", icon_url=closer.display_avatar.url)
         embed.timestamp = disnake.utils.utcnow()
@@ -498,7 +497,7 @@ class Chat:
                 view = None
             tasks.append(self.bot.log_channel.send(embed=embed, view=view))
 
-        # Thread closed message
+        # Chat closed message
 
         embed = disnake.Embed(
             title=self.bot.config["thread_close_title"],
@@ -566,7 +565,7 @@ class Chat:
             try:
                 message1 = await self.channel.fetch_message(message_id)
             except disnake.NotFound:
-                raise ValueError("Thread message not found.")
+                raise ValueError("Chat message not found.")
 
             if not (
                 message1.embeds
@@ -574,20 +573,20 @@ class Chat:
                 and message1.embeds[0].color
                 and message1.author == self.bot.user
             ):
-                raise ValueError("Thread message not found.")
+                raise ValueError("Chat message not found.")
 
             if message1.embeds[0].color.value == self.bot.main_color and (
                 message1.embeds[0].author.name.startswith("Note")
                 or message1.embeds[0].author.name.startswith("Persistent Note")
             ):
                 if not note:
-                    raise ValueError("Thread message not found.")
+                    raise ValueError("Chat message not found.")
                 return message1, None
 
             if message1.embeds[0].color.value != self.bot.mod_color and not (
                 either_direction and message1.embeds[0].color.value == self.bot.recipient_color
             ):
-                raise ValueError("Thread message not found.")
+                raise ValueError("Chat message not found.")
         else:
             async for message1 in self.channel.history():
                 if (
@@ -603,7 +602,7 @@ class Chat:
                 ):
                     break
             else:
-                raise ValueError("Thread message not found.")
+                raise ValueError("Chat message not found.")
 
         try:
             joint_id = int(message1.embeds[0].author.url.split("#")[-1])
@@ -703,9 +702,9 @@ class Chat:
                     linked_messages.append(msg)
                     break
             else:
-                raise ValueError("Thread channel message not found.")
+                raise ValueError("Chat channel message not found.")
         else:
-            raise ValueError("Thread channel message not found.")
+            raise ValueError("Chat channel message not found.")
 
         if get_thread_channel:
             # end early as we only want the main message from thread channel
@@ -1218,7 +1217,7 @@ class Chat:
         await self._update_users_genesis()
 
 
-class ThreadManager:
+class ChatManager:
     """Class that handles storing, finding and creating Modmail threads."""
 
     def __init__(self, bot):
@@ -1235,7 +1234,7 @@ class ThreadManager:
     def __iter__(self):
         return iter(self.cache.values())
 
-    def __getitem__(self, item: str) -> Thread:
+    def __getitem__(self, item: str) -> Chat:
         return self.cache[item]
 
     async def find(
@@ -1244,7 +1243,7 @@ class ThreadManager:
         recipient: typing.Union[disnake.Member, disnake.User] = None,
         channel: disnake.TextChannel = None,
         recipient_id: int = None,
-    ) -> typing.Optional[Thread]:
+    ) -> typing.Optional[Chat]:
         """Finds a thread from cache or from disnake channel topics."""
         if recipient is None and channel is not None and isinstance(channel, disnake.TextChannel):
             thread = await self._find_from_channel(channel)
@@ -1265,7 +1264,7 @@ class ThreadManager:
             try:
                 await thread.wait_until_ready()
             except asyncio.CancelledError:
-                logger.warning("Thread for %s cancelled.", recipient)
+                logger.warning("Chat for %s cancelled.", recipient)
                 return thread
             else:
                 if not thread.cancelled and (
@@ -1286,7 +1285,7 @@ class ThreadManager:
             )
 
             if channel:
-                thread = await Thread.from_channel(self, channel)
+                thread = await Chat.from_channel(self, channel)
                 if thread.recipient:
                     # only save if data is valid.
                     # also the recipient_id here could belong to other recipient,
@@ -1334,9 +1333,9 @@ class ThreadManager:
             other_recipients.append(other_recipient)
 
         if recipient is None:
-            thread = Thread(self, user_id, channel, other_recipients)
+            thread = Chat(self, user_id, channel, other_recipients)
         else:
-            self.cache[user_id] = thread = Thread(self, recipient, channel, other_recipients)
+            self.cache[user_id] = thread = Chat(self, recipient, channel, other_recipients)
         thread.ready = True
 
         return thread
@@ -1349,7 +1348,7 @@ class ThreadManager:
         creator: typing.Union[disnake.Member, disnake.User] = None,
         category: disnake.CategoryChannel = None,
         manual_trigger: bool = True,
-    ) -> Thread:
+    ) -> Chat:
         """Creates a Modmail thread"""
 
         # checks for existing thread in cache
@@ -1358,7 +1357,7 @@ class ThreadManager:
             try:
                 await thread.wait_until_ready()
             except asyncio.CancelledError:
-                logger.warning("Thread for %s cancelled, abort creating.", recipient)
+                logger.warning("Chat for %s cancelled, abort creating.", recipient)
                 return thread
             else:
                 if thread.channel and self.bot.get_channel(thread.channel.id):
@@ -1369,7 +1368,7 @@ class ThreadManager:
                     thread.close(closer=self.bot.user, silent=True, delete_channel=False)
                 )
 
-        thread = Thread(self, recipient)
+        thread = Chat(self, recipient)
 
         self.cache[recipient.id] = thread
 
@@ -1436,5 +1435,5 @@ class ThreadManager:
         self.bot.loop.create_task(thread.setup(creator=creator, category=category, initial_message=message))
         return thread
 
-    async def find_or_create(self, recipient) -> Thread:
+    async def find_or_create(self, recipient) -> Chat:
         return await self.find(recipient=recipient) or await self.create(recipient)
