@@ -43,6 +43,7 @@ class Chat:
     ):
         self.manager = manager
         self.bot = manager.bot
+
         if isinstance(recipient, int):
             self._id = recipient
             self._recipient = None
@@ -51,6 +52,7 @@ class Chat:
                 raise CommandError("Recipient cannot be a bot.")
             self._id = recipient.id
             self._recipient = recipient
+
         self._other_recipients = other_recipients or []
         self._channel = channel
         self._genesis_message = None

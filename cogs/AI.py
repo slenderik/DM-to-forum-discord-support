@@ -1,6 +1,6 @@
-import dialogflow
+from google.cloud import dialogflow
 
-from dialogflow_v2.proto.session_pb2 import QueryResult
+from google.cloud.dialogflow import QueryResult
 from disnake import Embed
 from google.api_core.exceptions import InvalidArgument
 from os import environ
@@ -18,8 +18,8 @@ async def ai_answer(text: str, session_id: int, context: str = None) -> QueryRes
     session_client = dialogflow.SessionsClient()
     session = session_client.session_path(project_id, session_id)
 
-    text_input = dialogflow.types.TextInput(text=text, language_code=language)
-    query_input = dialogflow.types.QueryInput(text=text_input)
+    text_input = dialogflow.TextInput(text=text, language_code=language)
+    query_input = dialogflow.QueryInput(text=text_input)
 
     try:
         response = session_client.detect_intent(session=session, query_input=query_input)
