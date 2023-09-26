@@ -811,16 +811,16 @@ class Chat:
             user_msg = None
             if isinstance(e, disnake.Forbidden):
                 description = (
-                    "Your message could not be delivered as "
-                    "the recipient is only accepting direct "
-                    "messages from friends, or the bot was "
-                    "blocked by the recipient."
+                    "Это сообщение не может быть доставлено "
+                    "потому что получатель принимает "
+                    "сообщения только от друзей, или бот "
+                    "заблокирован получателем."
                 )
             else:
                 description = (
-                    "Your message could not be delivered due "
-                    "to an unknown error. Check `?debug` for "
-                    "more information"
+                    "Сообщение не доставлено "
+                    "по не известной ошибке. Смотри `?debug` "
+                    "для большей информации."
                 )
             msg = await message.channel.send(
                 embed=disnake.Embed(
@@ -862,15 +862,16 @@ class Chat:
     async def send(
         self,
         message: disnake.Message,
-        destination: typing.Union[
+        destination: typing.Union[ # куда прислать
             disnake.TextChannel, disnake.DMChannel, disnake.User, disnake.Member
         ] = None,
         from_mod: bool = False,
+        from_ai: bool = False,
         note: bool = False,
         anonymous: bool = False,
         plain: bool = False,
         persistent_note: bool = False,
-        thread_creation: bool = False,
+        thread_creation: bool = False
     ) -> None:
 
         if not note and from_mod:
